@@ -119,7 +119,7 @@
 
   .controls{
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     gap: 8px;
   }
   .button{
@@ -234,7 +234,6 @@
 
       <div class="panel controls">
         <div class="button" id="btnNew">New Game</div>
-        <div class="button" id="btnAIMode">Human vs Bot</div>
       </div>
 
       <div class="panel">
@@ -246,7 +245,7 @@
 
       <div class="panel">
         <div class="hint">
-          Shortcuts: <span class="kbd">R</span> restart • <span class="kbd">H</span> toggle Human vs Bot
+          Shortcuts: <span class="kbd">R</span> restart
         </div>
       </div>
     </aside>
@@ -282,6 +281,7 @@
   const PLAYERS = ["red", "blue"];
   const HUMAN = "red";
   const BOT = "blue";
+  const vsBot = true; // always Human vs Bot
 
   // Geometry helpers mapping
   const diagPairMap = [
@@ -312,7 +312,6 @@
   const resultTitle = document.getElementById("resultTitle");
   const resultDetail = document.getElementById("resultDetail");
   const btnNew = document.getElementById("btnNew");
-  const btnAIMode = document.getElementById("btnAIMode");
   const btnPlayAgain = document.getElementById("btnPlayAgain");
   const btnExit = document.getElementById("btnExit");
 
@@ -321,7 +320,6 @@
   let scores = { red: 0, blue: 0 };
   let currentPlayerIndex = 0;
   let running = true;
-  let vsBot = true; // default Human vs Bot
   let hoverCell = null; // {r, c} or null
   let isBotThinking = false;
 
@@ -503,7 +501,8 @@
 
   // Handle real move (with animations)
   function handleClick(r, c){
-    if(!running || isBotThinking) return false;
+    // FIX: allow bot to play while thinking (only block via input handlers)
+    if(!running) return false;
     if(r<0 || r>=GRID_SIZE || c<0 || c>=GRID_SIZE) return false;
     const cell = board[r][c];
     if(cell.lines.every(Boolean)) return false;
@@ -611,8 +610,7 @@
     if(!res) return { valid: false, score: -Infinity, detail: null, state: local };
     const gain = player === "blue" ? res.delta.blue : res.delta.red;
 
-    // Risk estimation: if this move enables opponent to pair immediately by selecting that specific neighbor,
-    // penalize slightly. We approximate by scanning opponent's best next move in the local state.
+    // Risk estimation: scan opponent's best reply
     const opponent = (player === "blue") ? "red" : "blue";
     let oppBest = 0;
     for(let rr=0; rr<GRID_SIZE; rr++){
@@ -626,7 +624,6 @@
       }
     }
 
-    // Weighted utility
     const utility = gain - 0.7 * oppBest;
     return { valid: true, score: utility, detail: {gain, oppBest}, state: local };
   }
@@ -659,9 +656,9 @@
     await sleep(180); // small pause for UX
     const pick = chooseBotMove() || findAnyAvailableCell();
     if(pick){
-      const ok = handleClick(pick.r, pick.c);
+      const ok = handleClick(pick.r, pick.c); // now allowed while isBotThinking = true
       if(ok){
-        if(isGameOver()) { endGameSequence(); return; }
+        if(isGameOver()) { endGameSequence(); isBotThinking = false; return; }
         switchPlayer();
       }
     }
@@ -858,7 +855,7 @@
     hoverCell = null;
   });
   canvas.addEventListener("click", (e)=>{
-    if(!running || isBotThinking) return;
+    if(!running || isBotThinking) return; // still block human clicks while bot is "thinking"
     const pos = getMousePos(e);
     const cell = cellAt(pos.x, pos.y);
     if(!cell) return;
@@ -910,11 +907,6 @@
 
   // Buttons
   btnNew.addEventListener("click", resetGame);
-  btnAIMode.addEventListener("click", ()=>{
-    vsBot = !vsBot;
-    btnAIMode.textContent = vsBot ? "Human vs Bot" : "Human vs Human";
-    resetGame();
-  });
   btnPlayAgain.addEventListener("click", ()=>{ resetGame(); });
   btnExit.addEventListener("click", ()=>{
     hideOverlay();
@@ -925,10 +917,6 @@
   // Keyboard
   window.addEventListener("keydown", (e)=>{
     if(e.key === "r" || e.key === "R"){
-      resetGame();
-    } else if(e.key === "h" || e.key === "H"){
-      vsBot = !vsBot;
-      btnAIMode.textContent = vsBot ? "Human vs Bot" : "Human vs Human";
       resetGame();
     }
   });
