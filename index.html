@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Two-Player Grid Game (Web)</title>
+<style>
+  :root{
+    --panel-width: 320px;
+    --bg0: #0e1116;
+    --bg1: #131823;
+    --panel: rgba(255,255,255,0.06);
+    --glass: rgba(255,255,255,0.08);
+    --text: #e6e9ef;
+    --accent: #00e0ff;
+    --red: #ff4d4f;
+    --blue: #1890ff;
+    --red-soft: rgba(255,77,79,0.26);
+    --blue-soft: rgba(24,144,255,0.26);
+    --grey-soft: rgba(160,160,160,0.26);
+    --grid: rgba(255,255,255,0.13);
+  }
+  *{ box-sizing: border-box; }
+  html,body{ height: 100%; margin: 0; background: radial-gradient(1400px 1100px at 10% 10%, #171d2a, #0b0f16 60%, #070a0e); color: var(--text); font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+
+  #app{
+    height: 100vh;
+    width: 100vw;
+    display: grid;
+    grid-template-columns: 1fr var(--panel-width);
+    gap: 0;
+  }
+
+  #boardArea{
+    display: grid;
+    place-items: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* soft vignette */
+  #boardArea::after{
+    content: "";
+    position: absolute;
+    inset: -30%;
+    background: radial-gradient(600px 480px at 20% 20%, rgba(64,152,255,0.2), transparent 50%),
+                radial-gradient(700px 520px at 80% 80%, rgba(255,64,112,0.15), transparent 55%);
+    pointer-events: none;
+    filter: blur(6px);
+  }
+
+  canvas{
+    display: block;
+    background: linear-gradient(160deg, #0e1320, #0c111b);
+    border-radius: 18px;
+    box-shadow:
+      0 12px 30px rgba(0,0,0,0.45),
+      inset 0 0 0 1px rgba(255,255,255,0.06),
+      0 0 40px rgba(0, 224, 255, 0.08);
+  }
+
+  #sidePanel{
+    border-left: 1px solid rgba(255,255,255,0.08);
+    background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+    backdrop-filter: blur(8px);
+    display: flex;
+    flex-direction: column;
+    padding: 16px 16px 12px 16px;
+    gap: 14px;
+  }
+
+  .title{
+    font-weight: 700;
+    font-size: 20px;
+    letter-spacing: 0.4px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .pill{
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--glass);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .panel{
+    background: var(--panel);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 12px;
+  }
+
+  .scoreRow{
+    display: flex; gap: 8px; align-items: center; justify-content: space-between;
+  }
+
+  .scoreCard{
+    flex: 1;
+    background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+  }
+  .scoreCard .label { opacity: 0.8; font-size: 12px; }
+  .scoreCard .value { font-size: 22px; font-weight: 800; letter-spacing: 0.4px; }
+
+  .chip{
+    display: inline-flex; align-items: center; gap: 8px;
+    font-weight: 700; letter-spacing: 0.3px;
+  }
+  .dot{
+    width: 12px; height: 12px; border-radius: 50%;
+    box-shadow: 0 0 8px rgba(255,255,255,0.25);
+  }
+  .dot.red { background: var(--red); box-shadow: 0 0 12px rgba(255,77,79,0.7); }
+  .dot.blue{ background: var(--blue); box-shadow: 0 0 12px rgba(24,144,255,0.7); }
+
+  .controls{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .button{
+    user-select: none;
+    cursor: pointer;
+    display: grid; place-items: center;
+    height: 40px;
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--text);
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.2s ease;
+  }
+  .button:hover{ transform: translateY(-1px); box-shadow: 0 8px 20px rgba(0,0,0,0.25); }
+  .button:active{ transform: translateY(0px) scale(0.995); }
+
+  .hint{
+    font-size: 12px; opacity: 0.7;
+  }
+
+  .pulse{
+    animation: pulse 320ms ease;
+  }
+  @keyframes pulse{
+    0% { transform: scale(0.96); }
+    60%{ transform: scale(1.04); }
+    100%{ transform: scale(1); }
+  }
+
+  /* Game Over overlay */
+  #overlay{
+    position: fixed;
+    inset: 0;
+    display: none;
+    place-items: center;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(3px);
+  }
+  #overlay.show{ display: grid; }
+  .modal{
+    width: min(420px, 88vw);
+    background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    padding: 18px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.45);
+  }
+  .modal h2{ margin: 6px 0 12px; font-size: 22px; }
+  .modal .row{ display: flex; gap: 10px; justify-content: center; }
+  .modal .button{ min-width: 140px; }
+
+  .kbd{
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 12px;
+    padding: 2px 6px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.06);
+  }
+
+  @media (max-width: 900px){
+    #app{ grid-template-columns: 1fr; }
+    #sidePanel{
+      border-left: none;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      height: auto;
+    }
+  }
+</style>
+</head>
+<body>
+  <div id="app">
+    <div id="boardArea">
+      <canvas id="gameCanvas"></canvas>
+    </div>
+    <aside id="sidePanel">
+      <div class="title">
+        Two-Player Grid Game
+        <span class="pill">5×5</span>
+      </div>
+
+      <div class="panel">
+        <div class="scoreRow">
+          <div class="scoreCard" id="redScoreCard">
+            <div class="chip"><span class="dot red"></span> Red</div>
+            <div style="text-align:right;">
+              <div class="label">Score</div>
+              <div class="value" id="redScore">0</div>
+            </div>
+          </div>
+          <div class="scoreCard" id="blueScoreCard">
+            <div class="chip"><span class="dot blue"></span> Blue</div>
+            <div style="text-align:right;">
+              <div class="label">Score</div>
+              <div class="value" id="blueScore">0</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <div>Turn</div>
+          <div class="chip" id="turnChip">
+            <span class="dot red" id="turnDot"></span>
+            <span id="turnLabel">Red</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel controls">
+        <div class="button" id="btnNew">New Game</div>
+        <div class="button" id="btnAIMode">Human vs Bot</div>
+      </div>
+
+      <div class="panel">
+        <div class="hint">
+          How to play: Click a cell to draw its next diamond edge. Matching diagonal edges with the neighbor creates colored corner triangles and +1 point. Completing a diamond entirely in your color awards +2. Completing a 4-triangle star at a vertex awards +1.<br><br>
+          Tip: Hover a cell to preview the next edge. Red is Human, Blue is AI.
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="hint">
+          Shortcuts: <span class="kbd">R</span> restart • <span class="kbd">H</span> toggle Human vs Bot
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div id="overlay">
+    <div class="modal">
+      <h2 id="resultTitle">Game Over</h2>
+      <div style="text-align:center; opacity:0.8; margin-bottom:14px;" id="resultDetail"></div>
+      <div class="row">
+        <div class="button" id="btnPlayAgain">Play Again</div>
+        <div class="button" id="btnExit">Exit</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  // Config
+  const GRID_SIZE = 5;
+  const COLORS = {
+    red:  { stroke: "#ff4d4f", fill: "rgba(255,77,79,0.26)" },
+    blue: { stroke: "#1890ff", fill: "rgba(24,144,255,0.26)" },
+    greyFill: "rgba(160,160,160,0.26)",
+    grid: "rgba(255,255,255,0.18)",
+    borderRed: "#ff4d4f",
+    borderBlue:"#1890ff",
+    boardBg: "#0d1420",
+    white: "#ffffff",
+  };
+  const PLAYERS = ["red", "blue"];
+  const HUMAN = "red";
+  const BOT = "blue";
+
+  // Geometry helpers mapping
+  const diagPairMap = [
+    { dr: -1, dc: -1, their: 2 }, // 0: (left, top) pairs with neighbor's 2
+    { dr: -1, dc:  1, their: 3 }, // 1: (top, right) pairs with neighbor's 3
+    { dr:  1, dc:  1, their: 0 }, // 2: (right, bottom) pairs with neighbor's 0
+    { dr:  1, dc: -1, their: 1 }, // 3: (bottom, left) pairs with neighbor's 1
+  ];
+
+  // Canvas & layout
+  const canvas = document.getElementById("gameCanvas");
+  const ctx = canvas.getContext("2d");
+  const boardArea = document.getElementById("boardArea");
+  let DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+  let BORDER_THICKNESS = 12; // dynamic per resize
+  let CELL_SIZE = 80;
+  let BOARD_PIXELS = GRID_SIZE * CELL_SIZE;
+  let boardX = 0, boardY = 0; // inside canvas
+
+  // UI elements
+  const redScoreEl  = document.getElementById("redScore");
+  const blueScoreEl = document.getElementById("blueScore");
+  const redScoreCard = document.getElementById("redScoreCard");
+  const blueScoreCard = document.getElementById("blueScoreCard");
+  const turnLabel = document.getElementById("turnLabel");
+  const turnDot = document.getElementById("turnDot");
+  const overlay = document.getElementById("overlay");
+  const resultTitle = document.getElementById("resultTitle");
+  const resultDetail = document.getElementById("resultDetail");
+  const btnNew = document.getElementById("btnNew");
+  const btnAIMode = document.getElementById("btnAIMode");
+  const btnPlayAgain = document.getElementById("btnPlayAgain");
+  const btnExit = document.getElementById("btnExit");
+
+  // Game state
+  let board = []; // 2D array cells
+  let scores = { red: 0, blue: 0 };
+  let currentPlayerIndex = 0;
+  let running = true;
+  let vsBot = true; // default Human vs Bot
+  let hoverCell = null; // {r, c} or null
+  let isBotThinking = false;
+
+  // Per-line animation: lineProgress in [0,1]
+  function makeEmptyCell(){
+    return {
+      lines: [false, false, false, false],
+      lineColors: [null, null, null, null],
+      triangleColors: [null, null, null, null],
+      diamondColor: null,
+      lineProgress: [0,0,0,0], // animation
+    };
+  }
+
+  function initBoard(){
+    board = Array.from({length: GRID_SIZE}, () =>
+      Array.from({length: GRID_SIZE}, () => makeEmptyCell())
+    );
+    scores.red = 0; scores.blue = 0;
+    currentPlayerIndex = 0;
+    hoverCell = null;
+    isBotThinking = false;
+    hideOverlay();
+    updateUI();
+  }
+
+  function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+
+  function resize(){
+    // Fit canvas nicely in available board area while preserving border proportion
+    const pad = 24; // inner padding from container
+    const areaRect = boardArea.getBoundingClientRect();
+    const maxBoard = Math.min(areaRect.width, areaRect.height) - pad*2;
+    const cellCandidate = Math.floor(maxBoard / GRID_SIZE);
+    CELL_SIZE = clamp(cellCandidate, 40, 160);
+
+    BOARD_PIXELS = CELL_SIZE * GRID_SIZE;
+    BORDER_THICKNESS = Math.max(8, Math.floor(BOARD_PIXELS * 0.04));
+
+    const w = BOARD_PIXELS + 2 * BORDER_THICKNESS;
+    const h = BOARD_PIXELS + 2 * BORDER_THICKNESS;
+
+    DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+    canvas.width = Math.floor(w * DPR);
+    canvas.height = Math.floor(h * DPR);
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+    boardX = BORDER_THICKNESS;
+    boardY = BORDER_THICKNESS;
+
+    draw();
+  }
+
+  // Geometry: corners and midpoints in pixels
+  function cellCorners(r, c){
+    const x1 = boardX + c * CELL_SIZE;
+    const y1 = boardY + r * CELL_SIZE;
+    return [
+      {x: x1, y: y1}, // top-left
+      {x: x1 + CELL_SIZE, y: y1}, // top-right
+      {x: x1 + CELL_SIZE, y: y1 + CELL_SIZE}, // bottom-right
+      {x: x1, y: y1 + CELL_SIZE}, // bottom-left
+    ];
+  }
+  function cellMidpoints(r, c){
+    const x1 = boardX + c * CELL_SIZE;
+    const y1 = boardY + r * CELL_SIZE;
+    const h = CELL_SIZE/2;
+    return [
+      {x: x1,           y: y1 + h}, // left
+      {x: x1 + h,       y: y1},     // top
+      {x: x1 + CELL_SIZE, y: y1 + h}, // right
+      {x: x1 + h,       y: y1 + CELL_SIZE}, // bottom
+    ];
+  }
+
+  function diagEndpoints(r, c){
+    const m = cellMidpoints(r,c);
+    return [
+      [m[0], m[1]],
+      [m[1], m[2]],
+      [m[2], m[3]],
+      [m[3], m[0]],
+    ];
+  }
+
+  // Pair cell for diagonal index
+  function getPairCell(r, c, diagIndex){
+    const {dr, dc, their} = diagPairMap[diagIndex];
+    const rr = r + dr, cc = c + dc;
+    if(rr < 0 || rr >= GRID_SIZE || cc < 0 || cc >= GRID_SIZE) return null;
+    return { r: rr, c: cc, theirDiag: their };
+  }
+
+  function cellCornerToVertex(r, c, cornerIdx){
+    return [
+      {R:r,   C:c},     // 0 TL
+      {R:r,   C:c+1},   // 1 TR
+      {R:r+1, C:c+1},   // 2 BR
+      {R:r+1, C:c},     // 3 BL
+    ][cornerIdx];
+  }
+  function squaresSharingVertex(R, C){
+    const out = [];
+    for(let rr of [R-1, R]){
+      for(let cc of [C-1, C]){
+        if(rr>=0 && rr<GRID_SIZE && cc>=0 && cc<GRID_SIZE){
+          out.push({r: rr, c: cc});
+        }
+      }
+    }
+    return out;
+  }
+  function cornerIndexForVertex(r, c, R, C){
+    const v = [
+      {R:r,   C:c},
+      {R:r,   C:c+1},
+      {R:r+1, C:c+1},
+      {R:r+1, C:c}
+    ];
+    for(let i=0;i<4;i++){
+      if(v[i].R===R && v[i].C===C) return i;
+    }
+    return null;
+  }
+
+  // Scoring checks (mutate given state)
+  function checkPair(state, r, c, diagIdx, player){
+    const pair = getPairCell(r, c, diagIdx);
+    if(!pair) return false;
+    const {r: rr, c: cc, theirDiag} = pair;
+    if(state.board[rr][cc].lines[theirDiag]){
+      state.board[r][c].triangleColors[diagIdx] = player;
+      state.board[rr][cc].triangleColors[theirDiag] = player;
+      state.scores[player] += 1;
+      return true;
+    }
+    return false;
+  }
+
+  function checkDiamond(state, r, c){
+    const cell = state.board[r][c];
+    if(cell.lines[0] && cell.lines[1] && cell.lines[2] && cell.lines[3]){
+      const colors = cell.lineColors;
+      if(colors[0] && colors.every(cl => cl === colors[0])){
+        if(cell.diamondColor == null){
+          cell.diamondColor = colors[0];
+          state.scores[colors[0]] += 2;
+        }
+      } else {
+        cell.diamondColor = "grey";
+      }
+    }
+  }
+
+  function checkDoublePair(state, r, c, diagIdx){
+    // Evaluate if the four triangles around this vertex exist and all same color
+    const {R, C} = cellCornerToVertex(r, c, diagIdx);
+    const sqr = squaresSharingVertex(R, C);
+    if(sqr.length !== 4) return false; // must be interior vertex
+    const triColors = [];
+    for(const s of sqr){
+      const cornerI = cornerIndexForVertex(s.r, s.c, R, C);
+      if(cornerI == null) return false;
+      const cell = state.board[s.r][s.c];
+      if(!cell.lines[cornerI]) return false;
+      const t = cell.triangleColors[cornerI];
+      if(!t) return false;
+      triColors.push(t);
+    }
+    if(triColors.length === 4 && triColors.every(tc => tc === triColors[0])){
+      state.scores[triColors[0]] += 1;
+      return true;
+    }
+    return false;
+  }
+
+  // Handle real move (with animations)
+  function handleClick(r, c){
+    if(!running || isBotThinking) return false;
+    if(r<0 || r>=GRID_SIZE || c<0 || c>=GRID_SIZE) return false;
+    const cell = board[r][c];
+    if(cell.lines.every(Boolean)) return false;
+
+    const currentPlayer = PLAYERS[currentPlayerIndex];
+
+    // find first undrawn line index
+    const i = cell.lines.findIndex(v => !v);
+    if(i === -1) return false;
+
+    // Apply move to live board and animate
+    cell.lines[i] = true;
+    cell.lineColors[i] = currentPlayer;
+    cell.lineProgress[i] = 0; // start anim
+
+    // Scoring (same order as original logic)
+    checkPair({board, scores}, r, c, i, currentPlayer);
+    checkDiamond({board, scores}, r, c);
+    checkDoublePair({board, scores}, r, c, i);
+
+    updateUI();
+    return true;
+  }
+
+  // Game over detection
+  function isGameOver(){
+    for(let r=0; r<GRID_SIZE; r++){
+      for(let c=0; c<GRID_SIZE; c++){
+        const cell = board[r][c];
+        if(!(cell.lines[0] && cell.lines[1] && cell.lines[2] && cell.lines[3])) return false;
+      }
+    }
+    return true;
+  }
+
+  function showOverlay(message, detail){
+    resultTitle.textContent = message;
+    resultDetail.textContent = detail || "";
+    overlay.classList.add("show");
+  }
+  function hideOverlay(){
+    overlay.classList.remove("show");
+  }
+
+  function updateUI(){
+    redScoreEl.textContent = String(scores.red);
+    blueScoreEl.textContent = String(scores.blue);
+    redScoreCard.classList.toggle("pulse", true);
+    setTimeout(()=>redScoreCard.classList.remove("pulse"), 220);
+    blueScoreCard.classList.toggle("pulse", true);
+    setTimeout(()=>blueScoreCard.classList.remove("pulse"), 220);
+
+    const currentPlayer = PLAYERS[currentPlayerIndex];
+    turnLabel.textContent = currentPlayer[0].toUpperCase() + currentPlayer.slice(1);
+    turnDot.className = "dot " + currentPlayer;
+  }
+
+  function switchPlayer(){
+    currentPlayerIndex = 1 - currentPlayerIndex;
+    updateUI();
+  }
+
+  // AI helpers (immutable simulation)
+  function cloneState(src){
+    const dst = {
+      board: Array.from({length: GRID_SIZE}, ()=>Array(GRID_SIZE)),
+      scores: { red: src.scores.red, blue: src.scores.blue },
+    };
+    for(let r=0;r<GRID_SIZE;r++){
+      for(let c=0;c<GRID_SIZE;c++){
+        const s = src.board[r][c];
+        dst.board[r][c] = {
+          lines: s.lines.slice(),
+          lineColors: s.lineColors.slice(),
+          triangleColors: s.triangleColors.slice(),
+          diamondColor: s.diamondColor,
+        };
+      }
+    }
+    return dst;
+  }
+
+  function applyMoveImmutable(state, r, c, player){
+    const cell = state.board[r][c];
+    if(cell.lines.every(Boolean)) return null;
+    const i = cell.lines.findIndex(v => !v);
+    if(i === -1) return null;
+
+    const before = { red: state.scores.red, blue: state.scores.blue };
+
+    cell.lines[i] = true;
+    cell.lineColors[i] = player;
+
+    checkPair(state, r, c, i, player);
+    checkDiamond(state, r, c);
+    checkDoublePair(state, r, c, i);
+
+    const delta = { red: state.scores.red - before.red, blue: state.scores.blue - before.blue };
+    return { firstLineIndex: i, delta };
+  }
+
+  function evaluateImmediateDelta(state, r, c, player){
+    const local = cloneState(state);
+    const res = applyMoveImmutable(local, r, c, player);
+    if(!res) return { valid: false, score: -Infinity, detail: null, state: local };
+    const gain = player === "blue" ? res.delta.blue : res.delta.red;
+
+    // Risk estimation: if this move enables opponent to pair immediately by selecting that specific neighbor,
+    // penalize slightly. We approximate by scanning opponent's best next move in the local state.
+    const opponent = (player === "blue") ? "red" : "blue";
+    let oppBest = 0;
+    for(let rr=0; rr<GRID_SIZE; rr++){
+      for(let cc=0; cc<GRID_SIZE; cc++){
+        const local2 = cloneState(local);
+        const res2 = applyMoveImmutable(local2, rr, cc, opponent);
+        if(res2){
+          const oppGain = opponent === "blue" ? res2.delta.blue : res2.delta.red;
+          if(oppGain > oppBest) oppBest = oppGain;
+        }
+      }
+    }
+
+    // Weighted utility
+    const utility = gain - 0.7 * oppBest;
+    return { valid: true, score: utility, detail: {gain, oppBest}, state: local };
+  }
+
+  function chooseBotMove(){
+    // Select the cell with best evaluated utility
+    const state = { board, scores: {...scores} }; // reference to live state for eval cloning
+    let best = { score: -Infinity, r: -1, c: -1, detail: null };
+    for(let r=0;r<GRID_SIZE;r++){
+      for(let c=0;c<GRID_SIZE;c++){
+        if(board[r][c].lines.every(Boolean)) continue;
+        const ev = evaluateImmediateDelta(state, r, c, BOT);
+        if(ev.valid){
+          if(ev.score > best.score || (Math.abs(ev.score - best.score) < 1e-6 && Math.random() < 0.5)){
+            best = { score: ev.score, r, c, detail: ev.detail };
+          }
+        }
+      }
+    }
+    if(best.r === -1) return null;
+    return { r: best.r, c: best.c };
+  }
+
+  async function botTurn(){
+    if(!vsBot) return;
+    if(PLAYERS[currentPlayerIndex] !== BOT) return;
+    if(isGameOver()) { endGameSequence(); return; }
+
+    isBotThinking = true;
+    await sleep(180); // small pause for UX
+    const pick = chooseBotMove() || findAnyAvailableCell();
+    if(pick){
+      const ok = handleClick(pick.r, pick.c);
+      if(ok){
+        if(isGameOver()) { endGameSequence(); return; }
+        switchPlayer();
+      }
+    }
+    isBotThinking = false;
+  }
+
+  function findAnyAvailableCell(){
+    for(let r=0;r<GRID_SIZE;r++){
+      for(let c=0;c<GRID_SIZE;c++){
+        if(!board[r][c].lines.every(Boolean)) return {r,c};
+      }
+    }
+    return null;
+  }
+
+  // Animation loop
+  let lastTime = performance.now();
+  function tick(now){
+    const dt = Math.min(0.05, (now - lastTime) / 1000);
+    lastTime = now;
+    updateAnimations(dt);
+    draw();
+    requestAnimationFrame(tick);
+  }
+
+  function updateAnimations(dt){
+    // Progress for new lines
+    const speed = 10; // units per second (fast)
+    for(let r=0;r<GRID_SIZE;r++){
+      for(let c=0;c<GRID_SIZE;c++){
+        const cell = board[r][c];
+        for(let i=0;i<4;i++){
+          if(cell.lines[i] && cell.lineProgress[i] < 1){
+            cell.lineProgress[i] = Math.min(1, cell.lineProgress[i] + dt * speed);
+          }
+        }
+      }
+    }
+  }
+
+  function draw(){
+    // Clear
+    ctx.clearRect(0,0,canvas.width, canvas.height);
+    const currentPlayer = PLAYERS[currentPlayerIndex];
+
+    // Board border glow
+    const borderColor = currentPlayer === "red" ? COLORS.borderRed : COLORS.borderBlue;
+    roundedRect(ctx, 0, 0, BOARD_PIXELS + 2*BORDER_THICKNESS, BOARD_PIXELS + 2*BORDER_THICKNESS, 16, borderColor);
+
+    // White-ish inner background
+    ctx.fillStyle = "#0b1019";
+    roundFill(ctx, boardX, boardY, BOARD_PIXELS, BOARD_PIXELS, 12);
+
+    // Grid lines
+    ctx.strokeStyle = COLORS.grid;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for(let col=0; col<=GRID_SIZE; col++){
+      const x = boardX + col * CELL_SIZE;
+      ctx.moveTo(x, boardY);
+      ctx.lineTo(x, boardY + BOARD_PIXELS);
+    }
+    for(let row=0; row<=GRID_SIZE; row++){
+      const y = boardY + row * CELL_SIZE;
+      ctx.moveTo(boardX, y);
+      ctx.lineTo(boardX + BOARD_PIXELS, y);
+    }
+    ctx.stroke();
+
+    // For each cell draw: grey diamond (if mixed), triangles, colored diamond, lines (on top)
+    for(let r=0;r<GRID_SIZE;r++){
+      for(let c=0;c<GRID_SIZE;c++){
+        const cell = board[r][c];
+        const mids = cellMidpoints(r, c);
+        const endpoints = diagEndpoints(r, c);
+
+        // Grey diamond fill if all lines and diamondColor is 'grey'
+        if(cell.lines.every(Boolean) && cell.diamondColor === "grey"){
+          ctx.fillStyle = COLORS.greyFill;
+          polygon(ctx, mids);
+          ctx.fill();
+        }
+
+        // Triangles
+        const corners = cellCorners(r, c);
+        for(let i=0;i<4;i++){
+          const triOwner = cell.triangleColors[i];
+          if(triOwner){
+            const pts = [
+              [corners[0], mids[0], mids[1]],
+              [corners[1], mids[1], mids[2]],
+              [corners[2], mids[2], mids[3]],
+              [corners[3], mids[3], mids[0]],
+            ][i];
+            ctx.fillStyle = triOwner === "red" ? COLORS.red.fill : COLORS.blue.fill;
+            polygon(ctx, pts);
+            ctx.fill();
+          }
+        }
+
+        // Colored diamond fill if uniform
+        if(cell.diamondColor && cell.diamondColor !== "grey"){
+          ctx.fillStyle = cell.diamondColor === "red" ? COLORS.red.fill : COLORS.blue.fill;
+          polygon(ctx, mids);
+          ctx.fill();
+        }
+
+        // Draw diamond edges
+        for(let i=0;i<4;i++){
+          if(cell.lines[i]){
+            const [p0, p1] = endpoints[i];
+            const prog = cell.lineProgress[i] ?? 1;
+            const x = p0.x + (p1.x - p0.x) * prog;
+            const y = p0.y + (p1.y - p0.y) * prog;
+            ctx.strokeStyle = cell.lineColors[i] === "red" ? COLORS.red.stroke : COLORS.blue.stroke;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(p0.x, p0.y);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+          }
+        }
+      }
+    }
+
+    // Hover preview of next line for the hovered cell
+    if(hoverCell){
+      const {r, c} = hoverCell;
+      if(r>=0 && r<GRID_SIZE && c>=0 && c<GRID_SIZE){
+        const cell = board[r][c];
+        if(!cell.lines.every(Boolean)){
+          const i = cell.lines.findIndex(v => !v);
+          const [p0,p1] = diagEndpoints(r,c)[i];
+          ctx.save();
+          ctx.setLineDash([6,6]);
+          ctx.lineDashOffset = 0;
+          ctx.strokeStyle = PLAYERS[currentPlayerIndex] === "red" ? "rgba(255,77,79,0.9)":"rgba(24,144,255,0.9)";
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(p0.x, p0.y);
+          ctx.lineTo(p1.x, p1.y);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }
+  }
+
+  // Drawing helpers
+  function roundedRect(ctx, x, y, w, h, r, strokeColor){
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = strokeColor;
+    roundPath(ctx, x, y, w, h, r);
+    ctx.stroke();
+
+    // glow
+    ctx.shadowColor = strokeColor;
+    ctx.shadowBlur = 30;
+    ctx.globalAlpha = 0.18;
+    roundFill(ctx, x, y, w, h, r);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+  function roundPath(ctx, x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r, y);
+    ctx.arcTo(x+w, y,   x+w, y+h, r);
+    ctx.arcTo(x+w, y+h, x,   y+h, r);
+    ctx.arcTo(x,   y+h, x,   y,   r);
+    ctx.arcTo(x,   y,   x+w, y,   r);
+    ctx.closePath();
+  }
+  function roundFill(ctx, x,y,w,h,r){
+    roundPath(ctx, x,y,w,h,r);
+    ctx.fill();
+  }
+  function polygon(ctx, points){
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for(let i=1;i<points.length;i++){
+      ctx.lineTo(points[i].x, points[i].y);
+    }
+    ctx.closePath();
+  }
+
+  // Input
+  canvas.addEventListener("pointermove", (e)=>{
+    const pos = getMousePos(e);
+    const cell = cellAt(pos.x, pos.y);
+    hoverCell = cell;
+  });
+  canvas.addEventListener("pointerleave", ()=>{
+    hoverCell = null;
+  });
+  canvas.addEventListener("click", (e)=>{
+    if(!running || isBotThinking) return;
+    const pos = getMousePos(e);
+    const cell = cellAt(pos.x, pos.y);
+    if(!cell) return;
+    const current = PLAYERS[currentPlayerIndex];
+    if(current !== HUMAN && vsBot) return; // Human move only when human's turn
+
+    const ok = handleClick(cell.r, cell.c);
+    if(ok){
+      // After human move
+      if(isGameOver()){
+        endGameSequence();
+        return;
+      }
+      switchPlayer();
+      if(vsBot) botTurn();
+    }
+  });
+
+  function getMousePos(e){
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left);
+    const y = (e.clientY - rect.top);
+    return { x, y };
+  }
+
+  function cellAt(x, y){
+    // Within board?
+    if(x < boardX || y < boardY || x > boardX + BOARD_PIXELS || y > boardY + BOARD_PIXELS) return null;
+    const col = Math.floor((x - boardX) / CELL_SIZE);
+    const row = Math.floor((y - boardY) / CELL_SIZE);
+    if(row<0||row>=GRID_SIZE||col<0||col>=GRID_SIZE) return null;
+    return {r: row, c: col};
+  }
+
+  // Game flow
+  function endGameSequence(){
+    running = false;
+    const r = scores.red, b = scores.blue;
+    const msg = r>b ? "Red Wins!" : b>r ? "Blue Wins!" : "It's a Draw!";
+    const det = `Red: ${r} • Blue: ${b}`;
+    showOverlay(msg, det);
+  }
+
+  function resetGame(){
+    running = true;
+    initBoard();
+    draw();
+  }
+
+  // Buttons
+  btnNew.addEventListener("click", resetGame);
+  btnAIMode.addEventListener("click", ()=>{
+    vsBot = !vsBot;
+    btnAIMode.textContent = vsBot ? "Human vs Bot" : "Human vs Human";
+    resetGame();
+  });
+  btnPlayAgain.addEventListener("click", ()=>{ resetGame(); });
+  btnExit.addEventListener("click", ()=>{
+    hideOverlay();
+    running = false;
+    // Disable interactions but keep board visible
+  });
+
+  // Keyboard
+  window.addEventListener("keydown", (e)=>{
+    if(e.key === "r" || e.key === "R"){
+      resetGame();
+    } else if(e.key === "h" || e.key === "H"){
+      vsBot = !vsBot;
+      btnAIMode.textContent = vsBot ? "Human vs Bot" : "Human vs Human";
+      resetGame();
+    }
+  });
+
+  function sleep(ms){ return new Promise(res=>setTimeout(res, ms)); }
+
+  // Init
+  initBoard();
+  resize();
+  window.addEventListener("resize", resize);
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
