@@ -138,9 +138,13 @@
   .button:hover{ transform: translateY(-1px); box-shadow: 0 8px 20px rgba(0,0,0,0.25); }
   .button:active{ transform: translateY(0px) scale(0.995); }
 
-  .hint{ font-size: 12px; opacity: 0.7; }
+  .hint{
+    font-size: 12px; opacity: 0.7;
+  }
 
-  .pulse{ animation: pulse 320ms ease; }
+  .pulse{
+    animation: pulse 320ms ease;
+  }
   @keyframes pulse{
     0% { transform: scale(0.96); }
     60%{ transform: scale(1.04); }
@@ -178,32 +182,6 @@
     background: rgba(255,255,255,0.06);
   }
 
-  /* Timer panel */
-  .timerPanel{
-    display: flex; align-items: center; justify-content: space-between;
-    font-size: 16px; font-weight: 700;
-  }
-  .timerValue{
-    font-feature-settings: "tnum";
-    font-variant-numeric: tabular-nums;
-    font-size: 22px; font-weight: 800;
-  }
-
-  /* Board banner text (GRAVITY, BLAST STORM, ROW SHIFT) */
-  #boardBanner{
-    position: absolute;
-    top: 16px; left: 50%; transform: translateX(-50%);
-    padding: 8px 14px;
-    border-radius: 10px;
-    background: rgba(255,255,255,0.1);
-    border: 1px solid rgba(255,255,255,0.2);
-    backdrop-filter: blur(4px);
-    font-weight: 800; letter-spacing: 0.6px;
-    display: none;
-    z-index: 5;
-  }
-  #boardBanner.show{ display: inline-block; }
-
   @media (max-width: 900px){
     #app{ grid-template-columns: 1fr; }
     #sidePanel{
@@ -218,19 +196,11 @@
   <div id="app">
     <div id="boardArea">
       <canvas id="gameCanvas"></canvas>
-      <div id="boardBanner">GRAVITY</div>
     </div>
     <aside id="sidePanel">
       <div class="title">
         Two-Player Grid Game
         <span class="pill">5×5</span>
-      </div>
-
-      <div class="panel">
-        <div class="timerPanel">
-          <div>Timer</div>
-          <div class="timerValue" id="timerText">02:00</div>
-        </div>
       </div>
 
       <div class="panel">
@@ -268,15 +238,8 @@
 
       <div class="panel">
         <div class="hint">
-          How to play: Click a cell to draw its next diamond edge. Matching diagonal edges with the neighbor creates colored corner triangles and +2 points. Completing a diamond entirely in your color awards +4. Completing a 4-triangle star at a vertex awards +2.<br><br>
-          Tip: Hover a cell to preview the next edge. Red is Human, Blue is AI. Game length: 2 minutes.
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="hint">
-          Special: Grey diamond shows a white circle. Clicking it pushes its 4 lines into the 4 diagonal neighbor cells (edge wraps). Swaps are visual; new fills credit the clicker only. Red/Blue diamond blasts clear edge-adjacent cells and themselves; matching-color destroyed lines give +1 each; center refills r,b,r,b and gets a new white circle.<br><br>
-          Events: At 1:10 random blasts; at 1:00 gravity; at 0:10 random row swaps. Circles and blasts disabled during events 1 & 3.
+          How to play: Click a cell to draw its next diamond edge. Matching diagonal edges with the neighbor creates colored corner triangles and +1 point. Completing a diamond entirely in your color awards +2. Completing a 4-triangle star at a vertex awards +1.<br><br>
+          Tip: Hover a cell to preview the next edge. Red is Human, Blue is AI.
         </div>
       </div>
 
@@ -305,7 +268,6 @@
 
   // Config
   const GRID_SIZE = 5;
-  const TOTAL_TIME = 120; // seconds
   const COLORS = {
     red:  { stroke: "#ff4d4f", fill: "rgba(255,77,79,0.26)" },
     blue: { stroke: "#1890ff", fill: "rgba(24,144,255,0.26)" },
@@ -322,20 +284,17 @@
   const vsBot = true; // always Human vs Bot
 
   // Geometry helpers mapping
-  // diag index mapping (same as before): 
-  // 0: left->top (push to NW), 1: top->right (push to NE), 2: right->bottom (push to SE), 3: bottom->left (push to SW)
   const diagPairMap = [
-    { dr: -1, dc: -1, their: 2 }, // 0 pair neighbor
-    { dr: -1, dc:  1, their: 3 }, // 1
-    { dr:  1, dc:  1, their: 0 }, // 2
-    { dr:  1, dc: -1, their: 1 }, // 3
+    { dr: -1, dc: -1, their: 2 }, // 0: (left, top) pairs with neighbor's 2
+    { dr: -1, dc:  1, their: 3 }, // 1: (top, right) pairs with neighbor's 3
+    { dr:  1, dc:  1, their: 0 }, // 2: (right, bottom) pairs with neighbor's 0
+    { dr:  1, dc: -1, their: 1 }, // 3: (bottom, left) pairs with neighbor's 1
   ];
 
   // Canvas & layout
   const canvas = document.getElementById("gameCanvas");
   const ctx = canvas.getContext("2d");
   const boardArea = document.getElementById("boardArea");
-  const boardBanner = document.getElementById("boardBanner");
   let DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
   let BORDER_THICKNESS = 12; // dynamic per resize
   let CELL_SIZE = 80;
@@ -355,7 +314,6 @@
   const btnNew = document.getElementById("btnNew");
   const btnPlayAgain = document.getElementById("btnPlayAgain");
   const btnExit = document.getElementById("btnExit");
-  const timerText = document.getElementById("timerText");
 
   // Game state
   let board = []; // 2D array cells
@@ -365,34 +323,14 @@
   let hoverCell = null; // {r, c} or null
   let isBotThinking = false;
 
-  // Timers / events
-  let timeRemaining = TOTAL_TIME; // seconds
-  let event1Started = false, event1Done = false; // Blast storm
-  let event2Done = false; // Gravity
-  let event3Started = false; // Row shift interval started
-  let rowShiftInterval = null;
-
-  // Flags
-  let inputLocked = false;           // block player input and bot turn
-  let blastsEnabled = true;          // disable during events 1 & 3
-  let circlesEnabled = true;         // disable during events 1 & 3
-
-  // Movement animations (circle push / gravity / swaps)
-  let activeBatches = new Map(); // batchId -> {segments, onComplete, kind, creditMode}
-  let batchCounter = 1;
-
-  // Blast animations
-  let blastFX = []; // {r,c,t, dur}
-
   // Per-line animation: lineProgress in [0,1]
   function makeEmptyCell(){
     return {
       lines: [false, false, false, false],
       lineColors: [null, null, null, null],
       triangleColors: [null, null, null, null],
-      diamondColor: null, // "red"/"blue"/"grey"/null
-      hasCircle: false,
-      lineProgress: [0,0,0,0], // animation for drawing lines
+      diamondColor: null,
+      lineProgress: [0,0,0,0], // animation
     };
   }
 
@@ -404,16 +342,6 @@
     currentPlayerIndex = 0;
     hoverCell = null;
     isBotThinking = false;
-    timeRemaining = TOTAL_TIME;
-    event1Started = false; event1Done = false;
-    event2Done = false;
-    event3Started = false;
-    if(rowShiftInterval){ clearInterval(rowShiftInterval); rowShiftInterval = null; }
-    inputLocked = false;
-    blastsEnabled = true;
-    circlesEnabled = true;
-    activeBatches.clear();
-    blastFX = [];
     hideOverlay();
     updateUI();
   }
@@ -480,19 +408,11 @@
     ];
   }
 
-  // Pair cell for diagonal index (vertex neighbor)
+  // Pair cell for diagonal index
   function getPairCell(r, c, diagIndex){
     const {dr, dc, their} = diagPairMap[diagIndex];
     const rr = r + dr, cc = c + dc;
     if(rr < 0 || rr >= GRID_SIZE || cc < 0 || cc >= GRID_SIZE) return null;
-    return { r: rr, c: cc, theirDiag: their };
-  }
-
-  // Wrapping variant for circle push
-  function getWrappedPairCell(r, c, diagIndex){
-    const {dr, dc, their} = diagPairMap[diagIndex];
-    const rr = (r + dr + GRID_SIZE) % GRID_SIZE;
-    const cc = (c + dc + GRID_SIZE) % GRID_SIZE;
     return { r: rr, c: cc, theirDiag: their };
   }
 
@@ -529,7 +449,6 @@
   }
 
   // Scoring checks (mutate given state)
-  // Base scoring doubled: pair +2, diamond +4, star +2
   function checkPair(state, r, c, diagIdx, player){
     const pair = getPairCell(r, c, diagIdx);
     if(!pair) return false;
@@ -537,21 +456,7 @@
     if(state.board[rr][cc].lines[theirDiag]){
       state.board[r][c].triangleColors[diagIdx] = player;
       state.board[rr][cc].triangleColors[theirDiag] = player;
-      state.scores[player] += 2; // doubled
-      return true;
-    }
-    return false;
-  }
-
-  // variant: credit to a specific player (used for circle push or neutral events)
-  function checkPairCredit(state, r, c, diagIdx, creditPlayer){
-    const pair = getPairCell(r, c, diagIdx);
-    if(!pair) return false;
-    const {r: rr, c: cc, theirDiag} = pair;
-    if(state.board[rr][cc].lines[theirDiag]){
-      state.board[r][c].triangleColors[diagIdx] = creditPlayer;
-      state.board[rr][cc].triangleColors[theirDiag] = creditPlayer;
-      state.scores[creditPlayer] += 2; // doubled
+      state.scores[player] += 1;
       return true;
     }
     return false;
@@ -562,32 +467,12 @@
     if(cell.lines[0] && cell.lines[1] && cell.lines[2] && cell.lines[3]){
       const colors = cell.lineColors;
       if(colors[0] && colors.every(cl => cl === colors[0])){
-        if(cell.diamondColor !== colors[0]){
+        if(cell.diamondColor == null){
           cell.diamondColor = colors[0];
-          cell.hasCircle = false;
-          state.scores[colors[0]] += 4; // doubled
+          state.scores[colors[0]] += 2;
         }
       } else {
         cell.diamondColor = "grey";
-        cell.hasCircle = true;
-      }
-    }
-  }
-
-  // Variant: award diamond completion to creditPlayer (used for circle push scoring)
-  function checkDiamondCredit(state, r, c, creditPlayer){
-    const cell = state.board[r][c];
-    if(cell.lines[0] && cell.lines[1] && cell.lines[2] && cell.lines[3]){
-      const colors = cell.lineColors;
-      if(colors[0] && colors.every(cl => cl === colors[0])){
-        if(cell.diamondColor !== colors[0]){
-          cell.diamondColor = colors[0];
-          cell.hasCircle = false;
-          state.scores[creditPlayer] += 4; // doubled, credit to clicker
-        }
-      } else {
-        cell.diamondColor = "grey";
-        cell.hasCircle = true;
       }
     }
   }
@@ -608,16 +493,16 @@
       triColors.push(t);
     }
     if(triColors.length === 4 && triColors.every(tc => tc === triColors[0])){
-      state.scores[triColors[0]] += 2; // doubled
+      state.scores[triColors[0]] += 1;
       return true;
     }
     return false;
   }
 
-  // Handle real move (with animations) - normal diagonal edge placement
+  // Handle real move (with animations)
   function handleClick(r, c){
+    // FIX: allow bot to play while thinking (only block via input handlers)
     if(!running) return false;
-    if(inputLocked) return false;
     if(r<0 || r>=GRID_SIZE || c<0 || c>=GRID_SIZE) return false;
     const cell = board[r][c];
     if(cell.lines.every(Boolean)) return false;
@@ -628,12 +513,12 @@
     const i = cell.lines.findIndex(v => !v);
     if(i === -1) return false;
 
-    // Apply move to live board and animate draw
+    // Apply move to live board and animate
     cell.lines[i] = true;
     cell.lineColors[i] = currentPlayer;
     cell.lineProgress[i] = 0; // start anim
 
-    // Scoring (doubled)
+    // Scoring (same order as original logic)
     checkPair({board, scores}, r, c, i, currentPlayer);
     checkDiamond({board, scores}, r, c);
     checkDoublePair({board, scores}, r, c, i);
@@ -642,8 +527,8 @@
     return true;
   }
 
-  // Game over detection (board fully filled)
-  function isGameOverBoard(){
+  // Game over detection
+  function isGameOver(){
     for(let r=0; r<GRID_SIZE; r++){
       for(let c=0; c<GRID_SIZE; c++){
         const cell = board[r][c];
@@ -673,10 +558,6 @@
     const currentPlayer = PLAYERS[currentPlayerIndex];
     turnLabel.textContent = currentPlayer[0].toUpperCase() + currentPlayer.slice(1);
     turnDot.className = "dot " + currentPlayer;
-
-    const mm = Math.floor(timeRemaining / 60);
-    const ss = Math.floor(timeRemaining % 60);
-    timerText.textContent = `${String(mm).padStart(2,"0")}:${String(ss).padStart(2,"0")}`;
   }
 
   function switchPlayer(){
@@ -748,8 +629,8 @@
   }
 
   function chooseBotMove(){
-    if(inputLocked) return null;
-    const state = { board, scores: {...scores} };
+    // Select the cell with best evaluated utility
+    const state = { board, scores: {...scores} }; // reference to live state for eval cloning
     let best = { score: -Infinity, r: -1, c: -1, detail: null };
     for(let r=0;r<GRID_SIZE;r++){
       for(let c=0;c<GRID_SIZE;c++){
@@ -769,22 +650,16 @@
   async function botTurn(){
     if(!vsBot) return;
     if(PLAYERS[currentPlayerIndex] !== BOT) return;
-    if(!running) return;
-    if(inputLocked) return;
-    if(isTimeUp()) { endGameSequence("Time's Up"); return; }
-    if(isGameOverBoard()) { endGameSequence(); return; }
+    if(isGameOver()) { endGameSequence(); return; }
 
     isBotThinking = true;
     await sleep(180); // small pause for UX
     const pick = chooseBotMove() || findAnyAvailableCell();
     if(pick){
-      const ok = handleClick(pick.r, pick.c);
+      const ok = handleClick(pick.r, pick.c); // now allowed while isBotThinking = true
       if(ok){
-        // Resolve post-placement (blast and extra-turn)
-        const blasted = await resolveBlastsIfAny(); // may lock temporarily, returns boolean
-        if(isTimeUp()){ isBotThinking = false; endGameSequence("Time's Up"); return; }
-        if(isGameOverBoard()){ isBotThinking = false; endGameSequence(); return; }
-        if(!blasted) switchPlayer();
+        if(isGameOver()) { endGameSequence(); isBotThinking = false; return; }
+        switchPlayer();
       }
     }
     isBotThinking = false;
@@ -799,318 +674,18 @@
     return null;
   }
 
-  // Movement batches
-  function scheduleBatch(segments, onComplete, kind, creditMode){
-    const id = batchCounter++;
-    const batch = { id, segments, onComplete, kind, creditMode };
-    activeBatches.set(id, batch);
-    inputLocked = true;
-    return id;
-  }
-
   // Animation loop
   let lastTime = performance.now();
   function tick(now){
     const dt = Math.min(0.05, (now - lastTime) / 1000);
     lastTime = now;
-
-    // Timer update
-    if(running && timeRemaining > 0){
-      timeRemaining = Math.max(0, timeRemaining - dt);
-      updateUI();
-      scheduleEvents();
-      if(timeRemaining <= 0){
-        endGameSequence("Time's Up");
-      }
-    }
-
     updateAnimations(dt);
     draw();
     requestAnimationFrame(tick);
   }
 
-  function isTimeUp(){ return timeRemaining <= 0; }
-
-  function setBanner(text, ms){
-    if(!text){
-      boardBanner.classList.remove("show");
-      return;
-    }
-    boardBanner.textContent = text;
-    boardBanner.classList.add("show");
-    if(ms){
-      setTimeout(()=> boardBanner.classList.remove("show"), ms);
-    }
-  }
-
-  // Events scheduler
-  function scheduleEvents(){
-    const elapsed = TOTAL_TIME - timeRemaining;
-
-    // Event 1: 50 sec (timer 1:10) -> 5 sec blast storm
-    if(!event1Started && elapsed >= 50 && elapsed < 60){
-      event1Started = true;
-      startBlastStorm();
-    }
-    // Event 2: 60 sec (timer 1:00) -> gravity 1 sec
-    if(!event2Done && elapsed >= 60){
-      event2Done = true;
-      startGravityEvent();
-    }
-    // Event 3: 110 sec (timer 0:10) -> row swaps until end
-    if(!event3Started && elapsed >= 110){
-      event3Started = true;
-      startRowSwapEvent();
-    }
-  }
-
-  async function startBlastStorm(){
-    // Disable circles and blasts; lock input globally for stability
-    const prevCircle = circlesEnabled;
-    const prevBlast = blastsEnabled;
-    circlesEnabled = false;
-    blastsEnabled = false;
-    inputLocked = true;
-
-    setBanner("BLAST STORM", 5000);
-
-    // 2 cells per second for 5 seconds
-    for(let t=0;t<5;t++){
-      await sleep(100); // small stagger
-      const picks = pickRandomCellsWithLines(2);
-      for(const {r,c} of picks){
-        animateCellBlast(r,c);
-        // destroy all lines, award +1 per destroyed line to a random player
-        let destroyed = 0;
-        for(let i=0;i<4;i++){
-          if(board[r][c].lines[i]){
-            board[r][c].lines[i] = false;
-            board[r][c].lineColors[i] = null;
-            board[r][c].triangleColors[i] = null;
-            destroyed++;
-          }
-        }
-        board[r][c].diamondColor = null;
-        board[r][c].hasCircle = false;
-        if(destroyed>0){
-          const who = Math.random()<0.5 ? "red":"blue";
-          scores[who] += destroyed * 1; // event-specific scoring
-        }
-      }
-      updateUI();
-      await sleep(900);
-    }
-
-    // Re-enable
-    circlesEnabled = prevCircle;
-    blastsEnabled = prevBlast;
-    inputLocked = false;
-
-    // Let bot continue if it's bot's turn
-    if(vsBot && PLAYERS[currentPlayerIndex]===BOT) botTurn();
-  }
-
-  function pickRandomCellsWithLines(k){
-    const cells = [];
-    for(let r=0;r<GRID_SIZE;r++){
-      for(let c=0;c<GRID_SIZE;c++){
-        const cell = board[r][c];
-        if(cell.lines.some(v=>v)) cells.push({r,c});
-      }
-    }
-    if(cells.length===0) return [];
-    const picks = [];
-    for(let i=0;i<k;i++){
-      if(cells.length===0) break;
-      const idx = Math.floor(Math.random()*cells.length);
-      picks.push(cells[idx]);
-      cells.splice(idx,1);
-    }
-    return picks;
-  }
-
-  async function startGravityEvent(){
-    // 1 sec lock input and animate fall
-    inputLocked = true;
-    setBanner("GRAVITY", 300);
-
-    // Compute fall targets for each line location (no wrapping)
-    const segments = [];
-    // We'll drop from bottom-1 up to top for each column row
-    for(let i=0;i<4;i++){
-      for(let c=0;c<GRID_SIZE;c++){
-        for(let r=GRID_SIZE-2; r>=0; r--){
-          if(board[r][c].lines[i]){
-            let rr = r;
-            while(rr+1 < GRID_SIZE && !board[rr+1][c].lines[i]){
-              rr++;
-            }
-            if(rr !== r){
-              // schedule movement for (r,c,i) -> (rr,c,i), credit to owner
-              const color = board[r][c].lineColors[i];
-              // Remove immediately from origin to avoid draw duplication during anim
-              board[r][c].lines[i] = false;
-              board[r][c].lineColors[i] = null;
-              segments.push(makeMoveSegment({r,c,i,color}, {r:rr,c,i}, "gravity"));
-            }
-          }
-        }
-      }
-    }
-
-    if(segments.length>0){
-      scheduleBatch(segments, async ()=>{
-        // Place lines at targets
-        for(const seg of segments){
-          const {to} = seg;
-          board[to.r][to.c].lines[to.i] = true;
-          board[to.r][to.c].lineColors[to.i] = seg.color;
-          board[to.r][to.c].lineProgress[to.i] = 1;
-        }
-        // After placement: perform scoring as if newly placed, credit to owner
-        const tempState = { board, scores };
-        // we'll score each moved line's destination
-        const affected = new Set(segments.map(s=>`${s.to.r},${s.to.c}`));
-        for(const key of affected){
-          const [r,c] = key.split(",").map(n=>parseInt(n));
-          const cell = board[r][c];
-          for(let i=0;i<4;i++){
-            if(cell.lines[i]){
-              // pair credit to the color of this line
-              const owner = cell.lineColors[i];
-              checkPairCredit(tempState, r, c, i, owner);
-            }
-          }
-          checkDiamond(tempState, r, c); // diamond award to their own color
-          // star checks around 4 corners
-          for(let i=0;i<4;i++) checkDoublePair(tempState, r, c, i);
-        }
-        inputLocked = false;
-        setBanner("", 0);
-        updateUI();
-        // Allow bot to continue
-        if(vsBot && PLAYERS[currentPlayerIndex]===BOT) botTurn();
-      }, "gravity", "owner");
-    }else{
-      // nothing moved
-      inputLocked = false;
-      setBanner("", 0);
-      if(vsBot && PLAYERS[currentPlayerIndex]===BOT) botTurn();
-    }
-  }
-
-  function startRowSwapEvent(){
-    // disable circles and blasts during swaps
-    circlesEnabled = false;
-    blastsEnabled = false;
-
-    setBanner("ROW SHIFT", 1200);
-    // Perform swaps every 2 seconds until time ends
-    rowShiftInterval = setInterval(async ()=>{
-      if(isTimeUp()){
-        clearInterval(rowShiftInterval);
-        rowShiftInterval = null;
-        return;
-      }
-      inputLocked = true;
-      const r = Math.floor(Math.random()*GRID_SIZE);
-      const upOrDown = (Math.random()<0.5 ? -1 : 1);
-      let r2 = r + upOrDown;
-      if(r2 < 0) r2 = r+1;
-      if(r2 >= GRID_SIZE) r2 = r-1;
-      if(r2 < 0 || r2 >= GRID_SIZE || r2 === r){
-        inputLocked = false;
-        return;
-      }
-
-      // Animate row move: create dummy segments sliding vertical
-      const segments = [];
-      // We'll animate a vertical translation for both rows (visual only)
-      const movingRows = new Set([r,r2]);
-      scheduleBatch(segments, async ()=>{
-        // Swap data
-        const tmp = board[r];
-        board[r] = board[r2];
-        board[r2] = tmp;
-
-        // After swap: recompute scoring due to reconfiguration (neutral -> owner)
-        const tempState = { board, scores };
-        // We'll scan both rows and their neighbors for new pairs/diamonds/stars.
-        const rowsToScan = new Set([r,r2, r-1, r+1, r2-1, r2+1].filter(rr => rr>=0 && rr<GRID_SIZE));
-        rowsToScan.forEach(rr=>{
-          for(let cc=0; cc<GRID_SIZE; cc++){
-            const cell = board[rr][cc];
-            // recompute diamondColor if fully filled
-            if(cell.lines.every(Boolean)){
-              // keep existing diamondColor but we'll re-evaluate
-              // just run checkDiamond which can set grey or uniform
-              // might add points to uniform owning color (since "neutral" event awards to owners)
-              const beforeR = scores.red, beforeB = scores.blue;
-              checkDiamond(tempState, rr, cc);
-              // For pairs: emulate each line being "re-placed" to credit owner (approx)
-              for(let i=0;i<4;i++){
-                if(cell.lines[i]){
-                  const owner = cell.lineColors[i];
-                  checkPairCredit(tempState, rr, cc, i, owner);
-                }
-              }
-              for(let i=0;i<4;i++) checkDoublePair(tempState, rr, cc, i);
-            }else{
-              // Not fully filled; still can form pairs
-              for(let i=0;i<4;i++){
-                if(cell.lines[i]){
-                  const owner = cell.lineColors[i];
-                  checkPairCredit(tempState, rr, cc, i, owner);
-                  checkDoublePair(tempState, rr, cc, i);
-                }
-              }
-            }
-          }
-        });
-
-        inputLocked = false;
-        updateUI();
-
-        // Re-enable features if time passed this window (keep disabled until game ends or next swap?)
-        // Spec says disable circles and blasts during event 3. We'll keep disabled until time up.
-        // No bot call here since input may resume immediately; let main loop handle.
-        if(vsBot && PLAYERS[currentPlayerIndex]===BOT && !inputLocked) botTurn();
-
-      }, "rowswap", "owner");
-
-      // We show small visual nudge by temporarily setting banner text
-      setBanner("ROW SHIFT", 800);
-      await sleep(800);
-    }, 2000);
-  }
-
-  // Movement segment factory
-  function makeMoveSegment(from, to, kind){
-    const [p0a,p1a] = diagEndpoints(from.r, from.c)[from.i];
-    const [p0b,p1b] = diagEndpoints(to.r, to.c)[to.i];
-    // For wrap-like visuals across board edges: interpolate using minimal torus delta
-    const W = BOARD_PIXELS, H = BOARD_PIXELS;
-    function adj(a, b, len){
-      let d = b - a;
-      if(Math.abs(d) > len/2){
-        d -= Math.sign(d) * len;
-      }
-      return {a, d};
-    }
-    const ax0 = p0a.x, ay0 = p0a.y, ax1 = p1a.x, ay1 = p1a.y;
-    const bx0 = p0b.x, by0 = p0b.y, bx1 = p1b.x, by1 = p1b.y;
-    const x0 = adj(ax0, bx0, W), y0 = adj(ay0, by0, H);
-    const x1 = adj(ax1, bx1, W), y1 = adj(ay1, by1, H);
-    return {
-      from, to, color: from.color,
-      t: 0, dur: kind==="gravity" ? 0.7 : 0.6,
-      geom: {x0, y0, x1, y1},
-      kind
-    };
-  }
-
   function updateAnimations(dt){
-    // Progress for new lines (draw-in)
+    // Progress for new lines
     const speed = 10; // units per second (fast)
     for(let r=0;r<GRID_SIZE;r++){
       for(let c=0;c<GRID_SIZE;c++){
@@ -1118,32 +693,6 @@
         for(let i=0;i<4;i++){
           if(cell.lines[i] && cell.lineProgress[i] < 1){
             cell.lineProgress[i] = Math.min(1, cell.lineProgress[i] + dt * speed);
-          }
-        }
-      }
-    }
-
-    // Animate blast FX
-    for(const fx of blastFX){
-      fx.t += dt;
-    }
-    blastFX = blastFX.filter(fx => fx.t < fx.dur);
-
-    // Animate movement batches
-    if(activeBatches.size>0){
-      for(const [id, batch] of activeBatches){
-        let allDone = true;
-        for(const seg of batch.segments){
-          seg.t = Math.min(1, seg.t + dt / seg.dur);
-          if(seg.t < 1) allDone = false;
-        }
-        if(allDone){
-          // finalize and remove
-          activeBatches.delete(id);
-          if(typeof batch.onComplete === "function") batch.onComplete();
-          // If no more batches, unlock input unless an event says otherwise
-          if(activeBatches.size===0){
-            // inputLocked stays boolean that other events may override
           }
         }
       }
@@ -1179,7 +728,7 @@
     }
     ctx.stroke();
 
-    // For each cell draw: grey diamond (if mixed), triangles, colored diamond, lines (on top), white circle
+    // For each cell draw: grey diamond (if mixed), triangles, colored diamond, lines (on top)
     for(let r=0;r<GRID_SIZE;r++){
       for(let c=0;c<GRID_SIZE;c++){
         const cell = board[r][c];
@@ -1232,62 +781,7 @@
             ctx.stroke();
           }
         }
-
-        // White circle if grey diamond and circles enabled (draw anyway; clicks gated by flag)
-        if(cell.hasCircle){
-          const center = { x: boardX + c*CELL_SIZE + CELL_SIZE/2, y: boardY + r*CELL_SIZE + CELL_SIZE/2 };
-          ctx.beginPath();
-          ctx.fillStyle = "rgba(255,255,255,0.9)";
-          ctx.strokeStyle = "rgba(255,255,255,0.6)";
-          ctx.lineWidth = 2;
-          ctx.arc(center.x, center.y, Math.max(8, CELL_SIZE*0.12), 0, Math.PI*2);
-          ctx.fill();
-          ctx.stroke();
-        }
       }
-    }
-
-    // Active movement segments (draw moving lines)
-    if(activeBatches.size>0){
-      ctx.save();
-      for(const [,batch] of activeBatches){
-        for(const seg of batch.segments){
-          // Interpolate endpoints
-          const t = seg.t;
-          const {x0,y0,x1,y1} = seg.geom;
-          const ax0 = x0.a + x0.d * t;
-          const ay0 = y0.a + y0.d * t;
-          const ax1 = x1.a + x1.d * t;
-          const ay1 = y1.a + y1.d * t;
-          // wrap coordinates to board frame for drawing
-          const wrapX = (x)=> {
-            const min = boardX, max = boardX + BOARD_PIXELS;
-            let xx = x;
-            while(xx < min) xx += BOARD_PIXELS;
-            while(xx > max) xx -= BOARD_PIXELS;
-            return xx;
-          };
-          const wrapY = (y)=> {
-            const min = boardY, max = boardY + BOARD_PIXELS;
-            let yy = y;
-            while(yy < min) yy += BOARD_PIXELS;
-            while(yy > max) yy -= BOARD_PIXELS;
-            return yy;
-          };
-          const p0x = wrapX(ax0), p0y = wrapY(ay0);
-          const p1x = wrapX(ax1), p1y = wrapY(ay1);
-
-          ctx.strokeStyle = seg.color === "red" ? COLORS.red.stroke : COLORS.blue.stroke;
-          ctx.lineWidth = 3.2;
-          ctx.globalAlpha = 0.85;
-          ctx.beginPath();
-          ctx.moveTo(p0x, p0y);
-          ctx.lineTo(p1x, p1y);
-          ctx.stroke();
-          ctx.globalAlpha = 1;
-        }
-      }
-      ctx.restore();
     }
 
     // Hover preview of next line for the hovered cell
@@ -1310,20 +804,6 @@
           ctx.restore();
         }
       }
-    }
-
-    // Blast FX
-    for(const fx of blastFX){
-      const center = { x: boardX + fx.c*CELL_SIZE + CELL_SIZE/2, y: boardY + fx.r*CELL_SIZE + CELL_SIZE/2 };
-      const t = fx.t / fx.dur;
-      const radius = CELL_SIZE * (0.3 + 0.9*t);
-      ctx.save();
-      ctx.strokeStyle = "rgba(255,255,255," + (0.8*(1-t)) + ")";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(center.x, center.y, radius, 0, Math.PI*2);
-      ctx.stroke();
-      ctx.restore();
     }
   }
 
@@ -1374,53 +854,23 @@
   canvas.addEventListener("pointerleave", ()=>{
     hoverCell = null;
   });
-  canvas.addEventListener("click", async (e)=>{
-    if(!running || isBotThinking) return;
+  canvas.addEventListener("click", (e)=>{
+    if(!running || isBotThinking) return; // still block human clicks while bot is "thinking"
     const pos = getMousePos(e);
     const cell = cellAt(pos.x, pos.y);
     if(!cell) return;
     const current = PLAYERS[currentPlayerIndex];
-
-    // Circle click (if allowed)
-    if(!inputLocked && circlesEnabled){
-      const {r,c} = cell;
-      const cc = { x: boardX + c*CELL_SIZE + CELL_SIZE/2, y: boardY + r*CELL_SIZE + CELL_SIZE/2 };
-      const dx = pos.x - cc.x, dy = pos.y - cc.y;
-      const radius = Math.max(8, CELL_SIZE*0.12) + 3;
-      if(board[r][c].hasCircle && (dx*dx + dy*dy) <= radius*radius){
-        // click circle
-        if(current !== HUMAN && vsBot) return; // only human interacts
-        const blasted = await performCirclePush(r, c, current);
-        if(isTimeUp()){ endGameSequence("Time's Up"); return; }
-        if(isGameOverBoard()){ endGameSequence(); return; }
-        if(!blasted) switchPlayer();
-        if(vsBot) botTurn();
-        return;
-      }
-    }
-
-    // Normal line placement
-    if(inputLocked) return;
     if(current !== HUMAN && vsBot) return; // Human move only when human's turn
 
     const ok = handleClick(cell.r, cell.c);
     if(ok){
-      // After human move: resolve blasts (extra turn if blast)
-      const blasted = await resolveBlastsIfAny();
-      if(isTimeUp()){
-        endGameSequence("Time's Up");
-        return;
-      }
-      if(isGameOverBoard()){
+      // After human move
+      if(isGameOver()){
         endGameSequence();
         return;
       }
-      if(!blasted){
-        switchPlayer();
-        if(vsBot) botTurn();
-      }else{
-        // extra turn remains with human; no switch
-      }
+      switchPlayer();
+      if(vsBot) botTurn();
     }
   });
 
@@ -1440,198 +890,11 @@
     return {r: row, c: col};
   }
 
-  // Circle push mechanic
-  async function performCirclePush(r, c, clickerColor){
-    const cell = board[r][c];
-    if(!cell.hasCircle) return false;
-    if(inputLocked) return false;
-    // Build segments for each of 4 lines
-    const segments = [];
-    // We'll remove all four lines from origin immediately to avoid duplicates
-    const movedPairs = []; // for finalize: {from:{r,c,i,color}, to:{r,c,i}, swapped?:{from,to,color}}
-    for(let i=0;i<4;i++){
-      if(!cell.lines[i]) continue;
-      const color = cell.lineColors[i];
-      const target = getWrappedPairCell(r, c, i); // diagonal with wrapping
-      const rr = target.r, cc = target.c;
-      if(board[rr][cc].lines[i]){
-        // swap required
-        const occColor = board[rr][cc].lineColors[i];
-        // remove occupant from target for animation
-        board[rr][cc].lines[i] = false;
-        board[rr][cc].lineColors[i] = null;
-
-        // remove origin
-        board[r][c].lines[i] = false;
-        board[r][c].lineColors[i] = null;
-
-        const seg1 = makeMoveSegment({r,c,i,color}, {r:rr,c:cc,i}, "push");
-        const seg2 = makeMoveSegment({r:rr,c:cc,i,color: occColor}, {r,c,i}, "push");
-        segments.push(seg1, seg2);
-        movedPairs.push({from:{r,c,i,color}, to:{r:rr,c:cc,i}, swapped:{from:{r:rr,c:cc,i,color: occColor}, to:{r,c,i}}});
-      }else{
-        // simple move
-        // remove origin now
-        board[r][c].lines[i] = false;
-        board[r][c].lineColors[i] = null;
-
-        const seg = makeMoveSegment({r,c,i,color}, {r:rr,c:cc,i}, "push");
-        segments.push(seg);
-        movedPairs.push({from:{r,c,i,color}, to:{r:rr,c:cc,i}});
-      }
-      // triangleColors are invalidated around origin/target; we'll recompute later
-      cell.triangleColors[i] = null;
-    }
-
-    // After removing, update origin cell diamond/circle state
-    cell.hasCircle = false;
-    cell.diamondColor = null;
-
-    let blastedOccurred = false;
-
-    const complete = async ()=>{
-      // finalize placement
-      for(const m of movedPairs){
-        const to = m.to;
-        board[to.r][to.c].lines[to.i] = true;
-        board[to.r][to.c].lineColors[to.i] = m.from.color;
-        board[to.r][to.c].lineProgress[to.i] = 1;
-        if(m.swapped){
-          const back = m.swapped;
-          const to2 = back.to, from2 = back.from;
-          board[to2.r][to2.c].lines[to2.i] = true;
-          board[to2.r][to2.c].lineColors[to2.i] = from2.color;
-          board[to2.r][to2.c].lineProgress[to2.i] = 1;
-        }
-      }
-
-      // Score as if newly placed; credit to clicker
-      const touched = new Set();
-      for(const m of movedPairs){
-        touched.add(`${m.to.r},${m.to.c}`);
-        if(m.swapped) touched.add(`${m.swapped.to.r},${m.swapped.to.c}`);
-      }
-
-      for(const k of touched){
-        const [rr,cc] = k.split(",").map(x=>parseInt(x));
-        for(let i=0;i<4;i++){
-          if(board[rr][cc].lines[i]){
-            checkPairCredit({board, scores}, rr, cc, i, clickerColor);
-          }
-        }
-        checkDiamondCredit({board, scores}, rr, cc, clickerColor);
-        for(let i=0;i<4;i++) checkDoublePair({board, scores}, rr, cc, i);
-      }
-      updateUI();
-
-      // Blasts (if any diamonds formed) unless disabled by an event
-      const blasted = await resolveBlastsIfAny();
-      if(blasted) blastedOccurred = true;
-
-      inputLocked = false;
-    };
-
-    scheduleBatch(segments, complete, "push", "clicker");
-    return new Promise(resolve=>{
-      // Poll for completion flag via small interval
-      const it = setInterval(()=>{
-        if(activeBatches.size===0){
-          clearInterval(it);
-          resolve(blastedOccurred);
-        }
-      }, 30);
-    });
-  }
-
-  // Resolve blasts for all uniform diamonds (if enabled), returns true if any blast happened
-  async function resolveBlastsIfAny(){
-    if(!blastsEnabled) return false;
-
-    let anyBlast = false;
-    // Scan and collect cells to blast
-    const toBlast = [];
-    for(let r=0;r<GRID_SIZE;r++){
-      for(let c=0;c<GRID_SIZE;c++){
-        const cell = board[r][c];
-        if(cell.diamondColor === "red" || cell.diamondColor === "blue"){
-          toBlast.push({r,c,color: cell.diamondColor});
-        }
-      }
-    }
-    if(toBlast.length===0) return false;
-
-    anyBlast = true;
-    inputLocked = true;
-
-    // Animate and apply sequentially
-    for(const b of toBlast){
-      animateCellBlast(b.r, b.c);
-      await sleep(250);
-      // Remove lines from neighbors (edge-adjacent) and self
-      const dirs = [
-        {dr:-1, dc:0}, {dr:1, dc:0}, {dr:0, dc:-1}, {dr:0, dc:1}
-      ];
-      const color = b.color;
-      for(const d of dirs){
-        const rr = b.r + d.dr, cc = b.c + d.dc;
-        if(rr<0||rr>=GRID_SIZE||cc<0||cc>=GRID_SIZE) continue;
-        let destroyedSameColor = 0;
-        for(let i=0;i<4;i++){
-          if(board[rr][cc].lines[i]){
-            if(board[rr][cc].lineColors[i] === color) destroyedSameColor++;
-            board[rr][cc].lines[i] = false;
-            board[rr][cc].lineColors[i] = null;
-            board[rr][cc].triangleColors[i] = null;
-          }
-        }
-        if(destroyedSameColor>0){
-          scores[color] += destroyedSameColor * 1; // blast scoring: +1 per destroyed matching-color line
-        }
-        board[rr][cc].diamondColor = null;
-        board[rr][cc].hasCircle = false;
-      }
-
-      // Clear self
-      for(let i=0;i<4;i++){
-        board[b.r][b.c].lines[i] = false;
-        board[b.r][b.c].lineColors[i] = null;
-        board[b.r][b.c].triangleColors[i] = null;
-      }
-      board[b.r][b.c].diamondColor = null;
-      board[b.r][b.c].hasCircle = false;
-
-      updateUI();
-      await sleep(120);
-
-      // Refill center r,b,r,b and create white circle
-      const pattern = ["red","blue","red","blue"];
-      for(let i=0;i<4;i++){
-        board[b.r][b.c].lines[i] = true;
-        board[b.r][b.c].lineColors[i] = pattern[i];
-        board[b.r][b.c].lineProgress[i] = 1;
-      }
-      board[b.r][b.c].diamondColor = "grey";
-      board[b.r][b.c].hasCircle = true;
-      updateUI();
-      await sleep(80);
-    }
-
-    inputLocked = false;
-    return anyBlast;
-  }
-
-  function animateCellBlast(r,c){
-    blastFX.push({r,c,t:0,dur:0.35});
-  }
-
   // Game flow
-  function endGameSequence(reason){
+  function endGameSequence(){
     running = false;
-    inputLocked = true;
-    isBotThinking = false;
-    if(rowShiftInterval){ clearInterval(rowShiftInterval); rowShiftInterval = null; }
     const r = scores.red, b = scores.blue;
-    const msg = reason || (r>b ? "Red Wins!" : b>r ? "Blue Wins!" : "It's a Draw!");
+    const msg = r>b ? "Red Wins!" : b>r ? "Blue Wins!" : "It's a Draw!";
     const det = `Red: ${r} • Blue: ${b}`;
     showOverlay(msg, det);
   }
@@ -1648,7 +911,6 @@
   btnExit.addEventListener("click", ()=>{
     hideOverlay();
     running = false;
-    inputLocked = true;
     // Disable interactions but keep board visible
   });
 
