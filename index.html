@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>FILL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* Palette */
+    --bg-grad: radial-gradient(circle at 50% 30%, #2b3240 0%, #1a1f29 100%);
+    --board-bg: #252a33;
+    --board-metal: linear-gradient(135deg, #323844 0%, #22262e 100%);
+    --accent-p1: #ff2a6d; /* Razor Pink */
+    --accent-p2: #05d9e8; /* Cyber Cyan */
+    --text-main: #d1d5db;
+    --text-dim: #6b7280;
+    
+    /* Effects */
+    --shadow-bevel: 
+      inset 1px 1px 0px rgba(255,255,255,0.1),
+      inset -1px -1px 0px rgba(0,0,0,0.3),
+      0 10px 30px rgba(0,0,0,0.5);
+  }
+
+  * { box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+  
+  body, html {
+    height: 100%; margin: 0; overflow: hidden;
+    background: var(--bg-grad);
+    font-family: 'Rajdhani', sans-serif;
+    color: var(--text-main);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+
+  /* Vignette Overlay */
+  body::after {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(circle at center, transparent 50%, rgba(0,0,0,0.4) 100%);
+    pointer-events: none; z-index: 0;
+  }
+
+  /* --- Layout --- */
+  #app {
+    position: relative; z-index: 1;
+    display: flex; flex-direction: column; align-items: center; gap: 20px;
+    width: 100%; max-width: 600px;
+  }
+
+  /* --- HUD --- */
+  .hud {
+    display: flex; justify-content: space-between; align-items: center;
+    width: 100%; padding: 0 30px;
+  }
+
+  .player-card {
+    display: flex; flex-direction: column;
+    background: rgba(0,0,0,0.2);
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.05);
+    min-width: 110px;
+    transition: all 0.3s ease;
+    position: relative;
+  }
+  
+  .player-card.active {
+    background: rgba(255,255,255,0.03);
+    border-color: rgba(255,255,255,0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+  }
+  /* Indicator Line */
+  .player-card::after {
+    content:""; position: absolute; bottom: -1px; left: 20px; right: 20px; height: 3px;
+    background: currentColor; border-radius: 3px 3px 0 0;
+    opacity: 0; transition: 0.3s;
+  }
+  .player-card.active::after { opacity: 1; box-shadow: 0 0 10px currentColor; }
+
+  .p1 { color: var(--accent-p1); align-items: flex-start; }
+  .p2 { color: var(--accent-p2); align-items: flex-end; }
+  
+  .label { font-size: 14px; font-weight: 600; letter-spacing: 1px; color: var(--text-dim); text-transform: uppercase; }
+  .score { font-size: 36px; font-weight: 700; line-height: 1; margin-top: 2px; }
+
+  .vs-badge {
+    font-weight: 700; color: var(--text-dim); opacity: 0.5; letter-spacing: 2px; font-size: 14px;
+  }
+
+  /* --- The Metallic Board --- */
+  #board-wrapper {
+    position: relative;
+    padding: 12px;
+    background: var(--board-metal);
+    border-radius: 16px;
+    box-shadow: var(--shadow-bevel);
+  }
+
+  /* Inner recessed area */
+  #board-inner {
+    background: #1a1d24;
+    border-radius: 8px;
+    box-shadow: inset 0 2px 6px rgba(0,0,0,0.4);
+    overflow: hidden;
+    display: flex;
+  }
+
+  canvas {
+    display: block;
+    cursor: crosshair;
+  }
+
+  /* --- Controls --- */
+  .controls {
+    display: flex; gap: 15px; margin-top: 10px;
+  }
+  
+  .btn {
+    background: linear-gradient(180deg, #3a4150 0%, #2b303b 100%);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text-main);
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 10px 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    transition: all 0.2s;
+  }
+  .btn:hover {
+    transform: translateY(-1px);
+    border-color: rgba(255,255,255,0.3);
+    color: #fff;
+  }
+  .btn:active { transform: translateY(1px); box-shadow: none; }
+
+  /* --- Overlay --- */
+  #modal-overlay {
+    position: absolute; inset: 0; 
+    background: rgba(20, 23, 30, 0.85);
+    backdrop-filter: blur(8px);
+    z-index: 100;
+    display: none;
+    flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  #modal-overlay.show { display: flex; }
+  
+  .modal-card {
+    background: var(--board-metal);
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    text-align: center;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  
+  .modal-title { font-size: 42px; font-weight: 700; margin: 0 0 10px; text-transform: uppercase; }
+  .modal-sub { font-size: 18px; color: var(--text-dim); margin-bottom: 25px; }
+  
+  .btn-primary {
+    background: var(--accent-p1); color: #fff; border: none;
+    box-shadow: 0 0 15px rgba(255, 42, 109, 0.4);
+  }
+  .btn-primary:hover { background: #ff407d; box-shadow: 0 0 20px rgba(255, 42, 109, 0.6); border-color: transparent; }
+
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- HUD -->
+  <div class="hud">
+    <div class="player-card p1 active" id="cardP1">
+      <span class="label">Player 1</span>
+      <span class="score" id="scoreP1">00</span>
+    </div>
+    <div class="vs-badge">VS</div>
+    <div class="player-card p2" id="cardP2">
+      <span class="label">CPU (AI)</span>
+      <span class="score" id="scoreP2">00</span>
+    </div>
+  </div>
+
+  <!-- BOARD -->
+  <div id="board-wrapper">
+    <div id="board-inner">
+      <canvas id="gameCanvas"></canvas>
+    </div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="controls">
+    <button class="btn" id="btnRestart">Restart</button>
+  </div>
+</div>
+
+<!-- Full Screen Overlay -->
+<div id="modal-overlay">
+  <div class="modal-card">
+    <div class="modal-title" id="modalTitle">GAME OVER</div>
+    <div class="modal-sub" id="modalSub">Red wins by 2 points</div>
+    <button class="btn btn-primary" id="btnModalRestart">Play Again</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /** CONFIGURATION */
+  const GRID_SIZE = 5;
+  const COLORS = {
+    bg: "#1a1d24",        // Dark inner board
+    gridDots: "#4b5563",  // Mechanical anchor points
+    gridLines: "#2d333f", // Faint guide lines
+    p1: "#ff2a6d",        // Pink
+    p2: "#05d9e8",        // Cyan
+    p1Glow: "rgba(255, 42, 109, 0.5)",
+    p2Glow: "rgba(5, 217, 232, 0.5)",
+    white: "#ffffff"
+  };
+  
+  const BOT_DELAY = 500; // ms
+  
+  /** STATE */
+  let canvas, ctx;
+  let dpr = 1;
+  let cellSize = 0;
+  let padding = 24;
+  let boardSize = 0;
+  
+  let board = [];
+  let scores = { red: 0, blue: 0 };
+  let turn = "red"; 
+  let running = true;
+  let isBotThinking = false;
+  let hoverCell = null;
+  
+  // Animation loop variables
+  let particles = [];
+  let lastTime = 0;
+
+  /** INIT */
+  function init() {
+    canvas = document.getElementById("gameCanvas");
+    ctx = canvas.getContext("2d", { alpha: false });
+    
+    // Bind events
+    window.addEventListener("resize", resize);
+    canvas.addEventListener("mousemove", onMove);
+    canvas.addEventListener("mouseleave", () => { hoverCell = null; });
+    canvas.addEventListener("click", onClick);
+    
+    document.getElementById("btnRestart").onclick = resetGame;
+    document.getElementById("btnModalRestart").onclick = resetGame;
+    
+    resetGame();
+    requestAnimationFrame(loop);
+  }
+
+  function resetGame() {
+    board = [];
+    // Initialize Cells
+    for(let r=0; r<GRID_SIZE; r++){
+      let row = [];
+      for(let c=0; c<GRID_SIZE; c++){
+        row.push({
+          // 4 edges of a diamond: 0:TL, 1:TR, 2:BR, 3:BL (Relative to cell center)
+          lines: [false, false, false, false], 
+          owners: [null, null, null, null],
+          anim: [0, 0, 0, 0], // 0->1 progress
+          tris: [null, null, null, null], // filled triangles
+          diamond: null // filled diamond owner
+        });
+      }
+      board.push(row);
+    }
+    
+    scores = { red: 0, blue: 0 };
+    turn = "red";
+    running = true;
+    isBotThinking = false;
+    particles = [];
+    
+    document.getElementById("modal-overlay").classList.remove("show");
+    updateUI();
+    resize(); // Ensure correct sizing
+  }
+
+  function resize() {
+    const container = document.getElementById("app");
+    const maxW = Math.min(window.innerWidth - 40, 500);
+    
+    // Calculate size based on available width
+    cellSize = Math.floor((maxW - (padding*2)) / GRID_SIZE);
+    // Enforce minimum visual size quality or clamp
+    cellSize = Math.max(40, Math.min(100, cellSize));
+    
+    boardSize = cellSize * GRID_SIZE + (padding * 2);
+    
+    dpr = window.devicePixelRatio || 1;
+    canvas.width = boardSize * dpr;
+    canvas.height = boardSize * dpr;
+    canvas.style.width = `${boardSize}px`;
+    canvas.style.height = `${boardSize}px`;
+    
+    ctx.scale(dpr, dpr);
+  }
+
+  /** GAMEPLAY LOGIC */
+  
+  // Helper: Get coordinates of the 4 "Anchor Points" (Midpoints of cell edges)
+  function getAnchors(r, c) {
+    const cx = padding + c * cellSize + cellSize/2;
+    const cy = padding + r * cellSize + cellSize/2;
+    const h = cellSize / 2;
+    return [
+      { x: cx - h, y: cy },     // Left
+      { x: cx,     y: cy - h }, // Top
+      { x: cx + h, y: cy },     // Right
+      { x: cx,     y: cy + h }  // Bottom
+    ];
+  }
+
+  // Helper: Get line segments for the 4 possible moves in a cell
+  // 0: Top-Left edge (Left anchor to Top anchor)
+  // 1: Top-Right edge (Top anchor to Right anchor)
+  // 2: Bottom-Right edge (Right anchor to Bottom anchor)
+  // 3: Bottom-Left edge (Bottom anchor to Left anchor)
+  function getSegments(r, c) {
+    const a = getAnchors(r, c);
+    return [
+      [a[0], a[1]], // 0
+      [a[1], a[2]], // 1
+      [a[2], a[3]], // 2
+      [a[3], a[0]]  // 3
+    ];
+  }
+
+  // Map for adjacency checks
+  const ADJ_MAP = [
+    { dr: -1, dc: -1, oppIdx: 2 }, // 0 pairs with Neighbor's 2
+    { dr: -1, dc:  1, oppIdx: 3 }, // 1 pairs with Neighbor's 3
+    { dr:  1, dc:  1, oppIdx: 0 }, // 2 pairs with Neighbor's 0
+    { dr:  1, dc: -1, oppIdx: 1 }  // 3 pairs with Neighbor's 1
+  ];
+
+  function onClick(e) {
+    if(!running || isBotThinking || turn !== "red") return;
+    handleInput(e);
+  }
+
+  function handleInput(e) {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    // Determine Cell
+    const c = Math.floor((x - padding) / cellSize);
+    const r = Math.floor((y - padding) / cellSize);
+    
+    if(r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE) {
+      makeMove(r, c);
+    }
+  }
+  
+  function onMove(e) {
+    if(!running) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const c = Math.floor((x - padding) / cellSize);
+    const r = Math.floor((y - padding) / cellSize);
+    
+    if(r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE) {
+      hoverCell = { r, c };
+    } else {
+      hoverCell = null;
+    }
+  }
+
+  function makeMove(r, c) {
+    const cell = board[r][c];
+    
+    // Find first empty slot logic (simple tap-to-fill)
+    let slot = -1;
+    // Heuristic: fill in order 0..3
+    for(let i=0; i<4; i++) {
+      if(!cell.lines[i]) { slot = i; break; }
+    }
+    
+    if(slot === -1) return; // Full cell
+    
+    // Apply Move
+    cell.lines[slot] = true;
+    cell.owners[slot] = turn;
+    
+    // Visuals
+    const seg = getSegments(r, c)[slot];
+    spawnParticles((seg[0].x+seg[1].x)/2, (seg[0].y+seg[1].y)/2, turn);
+
+    // Scoring Logic
+    let scored = false;
+
+    // 1. Triangle Check (Neighbor)
+    const adj = ADJ_MAP[slot];
+    const nr = r + adj.dr;
+    const nc = c + adj.dc;
+    
+    if(nr>=0 && nr<GRID_SIZE && nc>=0 && nc<GRID_SIZE) {
+      const neighbor = board[nr][nc];
+      if(neighbor.lines[adj.oppIdx]) {
+        // We formed a triangle between cells
+        cell.tris[slot] = turn;
+        neighbor.tris[adj.oppIdx] = turn;
+        scores[turn]++;
+        scored = true;
+      }
+    }
+
+    // 2. Diamond Check (Self)
+    if(cell.lines.every(l => l)) {
+      // Check if all lines are same color
+      const first = cell.owners[0];
+      const allSame = cell.owners.every(o => o === first);
+      if(allSame) {
+        // Bonus +2
+        if(!cell.diamond) { // only score once
+            cell.diamond = first;
+            scores[first] += 2;
+            scored = true;
+        }
+      } else {
+        cell.diamond = "mixed"; // Greyed out
+      }
+    }
+
+    updateUI();
+
+    // Check Win
+    if(checkGameOver()) {
+      endGame();
+    } else {
+      // Switch Turn
+      turn = (turn === "red") ? "blue" : "red";
+      updateUI();
+      
+      if(turn === "blue" && running) {
+        isBotThinking = true;
+        setTimeout(botMove, BOT_DELAY);
+      }
+    }
+  }
+
+  /** BOT LOGIC (Greedy) */
+  function botMove() {
+    if(!running) return;
+    
+    let bestMoves = [];
+    let maxScore = -1;
+
+    // Analyze all possible moves
+    for(let r=0; r<GRID_SIZE; r++){
+      for(let c=0; c<GRID_SIZE; c++){
+        const cell = board[r][c];
+        let slot = -1;
+        for(let i=0; i<4; i++) if(!cell.lines[i]) { slot=i; break; }
+        
+        if(slot !== -1) {
+          // Simulate Score
+          let points = 0;
+          // Tri check
+          const adj = ADJ_MAP[slot];
+          const nr = r + adj.dr;
+          const nc = c + adj.dc;
+          if(nr>=0 && nr<GRID_SIZE && nc>=0 && nc<GRID_SIZE) {
+             if(board[nr][nc].lines[adj.oppIdx]) points += 1;
+          }
+          // Diamond check (Simulate filling)
+          // (Simplified: if this is the 4th line and 3 others match bot, +2)
+          let currentLines = 0;
+          let botLines = 0;
+          for(let k=0;k<4;k++) {
+            if(cell.lines[k]) {
+              currentLines++;
+              if(cell.owners[k] === "blue") botLines++;
+            }
+          }
+          if(currentLines === 3 && botLines === 3) points += 2;
+
+          if(points > maxScore) {
+            maxScore = points;
+            bestMoves = [{r,c}];
+          } else if (points === maxScore) {
+            bestMoves.push({r,c});
+          }
+        }
+      }
+    }
+    
+    if(bestMoves.length > 0) {
+      const move = bestMoves[Math.floor(Math.random() * bestMoves.length)];
+      makeMove(move.r, move.c);
+    }
+    isBotThinking = false;
+  }
+
+  function checkGameOver() {
+    for(let r=0; r<GRID_SIZE; r++){
+      for(let c=0; c<GRID_SIZE; c++){
+        if(board[r][c].lines.includes(false)) return false;
+      }
+    }
+    return true;
+  }
+
+  function endGame() {
+    running = false;
+    const title = document.getElementById("modalTitle");
+    const sub = document.getElementById("modalSub");
+    const ov = document.getElementById("modal-overlay");
+    
+    if(scores.red > scores.blue) {
+      title.textContent = "PLAYER 1 WINS";
+      title.style.color = COLORS.p1;
+    } else if (scores.blue > scores.red) {
+      title.textContent = "CPU WINS";
+      title.style.color = COLORS.p2;
+    } else {
+      title.textContent = "DRAW";
+      title.style.color = "#fff";
+    }
+    
+    sub.textContent = `${scores.red} - ${scores.blue}`;
+    ov.classList.add("show");
+  }
+
+  function updateUI() {
+    document.getElementById("scoreP1").textContent = String(scores.red).padStart(2,'0');
+    document.getElementById("scoreP2").textContent = String(scores.blue).padStart(2,'0');
+    
+    const c1 = document.getElementById("cardP1");
+    const c2 = document.getElementById("cardP2");
+    
+    if(turn === "red") {
+      c1.classList.add("active"); c2.classList.remove("active");
+    } else {
+      c1.classList.remove("active"); c2.classList.add("active");
+    }
+  }
+
+  /** RENDERING */
+  
+  function spawnParticles(x, y, colorId) {
+    const c = colorId === "red" ? COLORS.p1 : COLORS.p2;
+    for(let i=0; i<8; i++){
+      const ang = Math.random() * Math.PI * 2;
+      const spd = Math.random() * 2 + 1;
+      particles.push({
+        x, y,
+        vx: Math.cos(ang)*spd, vy: Math.sin(ang)*spd,
+        life: 1.0, color: c
+      });
+    }
+  }
+
+  function loop(timestamp) {
+    const dt = timestamp - lastTime;
+    lastTime = timestamp;
+    
+    // Update Particles
+    for(let i=particles.length-1; i>=0; i--){
+      let p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= 0.04;
+      if(p.life <= 0) particles.splice(i,1);
+    }
+    
+    // Update Line Animations
+    for(let r=0; r<GRID_SIZE; r++){
+      for(let c=0; c<GRID_SIZE; c++){
+        const cell = board[r][c];
+        for(let i=0; i<4; i++){
+          if(cell.lines[i] && cell.anim[i] < 1) {
+            cell.anim[i] += 0.15; // Animation speed
+            if(cell.anim[i] > 1) cell.anim[i] = 1;
+          }
+        }
+      }
+    }
+
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function draw() {
+    // Background Clear
+    ctx.fillStyle = COLORS.bg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // 1. Draw Grid Lines (Faint industrial background grid)
+    ctx.strokeStyle = COLORS.gridLines;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for(let i=0; i<=GRID_SIZE; i++) {
+      const pos = padding + i * cellSize;
+      // Vert
+      ctx.moveTo(pos, padding); ctx.lineTo(pos, padding + GRID_SIZE*cellSize);
+      // Horz
+      ctx.moveTo(padding, pos); ctx.lineTo(padding + GRID_SIZE*cellSize, pos);
+    }
+    ctx.stroke();
+
+    // 2. Draw Filled Areas (Triangles/Diamonds)
+    // Use "lighter" blending to make overlapping colors glow
+    ctx.globalCompositeOperation = 'screen';
+    
+    for(let r=0; r<GRID_SIZE; r++){
+      for(let c=0; c<GRID_SIZE; c++){
+        const cell = board[r][c];
+        const anchors = getAnchors(r, c); // L, T, R, B midpoints
+        const corners = [
+           {x: anchors[0].x, y: anchors[1].y}, // TL
+           {x: anchors[2].x, y: anchors[1].y}, // TR
+           {x: anchors[2].x, y: anchors[3].y}, // BR
+           {x: anchors[0].x, y: anchors[3].y}  // BL
+        ];
+
+        // Filled Diamond (Center)
+        if(cell.diamond && cell.diamond !== "mixed") {
+           ctx.fillStyle = (cell.diamond === "red") ? "rgba(255, 42, 109, 0.2)" : "rgba(5, 217, 232, 0.2)";
+           ctx.beginPath();
+           ctx.moveTo(anchors[0].x, anchors[0].y);
+           ctx.lineTo(anchors[1].x, anchors[1].y);
+           ctx.lineTo(anchors[2].x, anchors[2].y);
+           ctx.lineTo(anchors[3].x, anchors[3].y);
+           ctx.fill();
+        } else if (cell.diamond === "mixed") {
+           ctx.fillStyle = "rgba(255,255,255,0.05)";
+           ctx.beginPath();
+           ctx.moveTo(anchors[0].x, anchors[0].y);
+           ctx.lineTo(anchors[1].x, anchors[1].y);
+           ctx.lineTo(anchors[2].x, anchors[2].y);
+           ctx.lineTo(anchors[3].x, anchors[3].y);
+           ctx.fill();
+        }
+
+        // Filled Triangles (Corners)
+        // 0: TL edge (Left->Top)
+        for(let i=0; i<4; i++){
+           if(cell.tris[i]) {
+             ctx.fillStyle = (cell.tris[i] === "red") ? "rgba(255, 42, 109, 0.25)" : "rgba(5, 217, 232, 0.25)";
+             ctx.beginPath();
+             const seg = getSegments(r, c)[i]; // [start, end]
+             ctx.moveTo(seg[0].x, seg[0].y);
+             ctx.lineTo(seg[1].x, seg[1].y);
+             // Connect to the grid corner
+             ctx.lineTo(corners[i].x, corners[i].y);
+             ctx.fill();
+           }
+        }
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+
+    // 3. Draw Anchors (Mechanical Nodes)
+    // These are drawn at every midpoint to look like "connectors"
+    ctx.fillStyle = COLORS.gridDots;
+    for(let r=0; r<GRID_SIZE; r++){
+      for(let c=0; c<GRID_SIZE; c++){
+         const a = getAnchors(r, c);
+         for(let pt of a) {
+           ctx.beginPath();
+           ctx.arc(pt.x, pt.y, 3, 0, Math.PI*2);
+           ctx.fill();
+         }
+      }
+    }
+
+    // 4. Draw Lines (Lasers)
+    ctx.lineCap = 'round';
+    for(let r=0; r<GRID_SIZE; r++){
+      for(let c=0; c<GRID_SIZE; c++){
+        const cell = board[r][c];
+        const segments = getSegments(r, c);
+        
+        for(let i=0; i<4; i++){
+          if(cell.lines[i]) {
+             const p1 = segments[i][0];
+             const p2 = segments[i][1];
+             const progress = cell.anim[i];
+             
+             const mx = p1.x + (p2.x - p1.x) * progress;
+             const my = p1.y + (p2.y - p1.y) * progress;
+             
+             const isRed = cell.owners[i] === "red";
+             
+             ctx.save();
+             // Glow
+             ctx.shadowBlur = 10;
+             ctx.shadowColor = isRed ? COLORS.p1 : COLORS.p2;
+             ctx.strokeStyle = isRed ? COLORS.p1 : COLORS.p2;
+             ctx.lineWidth = 4;
+             
+             ctx.beginPath();
+             ctx.moveTo(p1.x, p1.y);
+             ctx.lineTo(mx, my);
+             ctx.stroke();
+             
+             // White Core
+             ctx.shadowBlur = 0;
+             ctx.lineWidth = 2;
+             ctx.strokeStyle = "#fff";
+             ctx.stroke();
+             ctx.restore();
+          }
+        }
+      }
+    }
+    
+    // 5. Hover Preview (Ghost Line)
+    if(hoverCell && turn === "red" && !isBotThinking && !checkGameOver()) {
+      const {r, c} = hoverCell;
+      const cell = board[r][c];
+      let slot = -1; 
+      for(let i=0; i<4; i++) if(!cell.lines[i]) { slot = i; break; }
+      
+      if(slot !== -1) {
+        const seg = getSegments(r, c)[slot];
+        ctx.save();
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 6]);
+        ctx.beginPath();
+        ctx.moveTo(seg[0].x, seg[0].y);
+        ctx.lineTo(seg[1].x, seg[1].y);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // 6. Particles
+    for(let p of particles) {
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 2, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  
+  init();
+
+})();
+</script>
+</body>
+</html>
